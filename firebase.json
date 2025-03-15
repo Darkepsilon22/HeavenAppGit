@@ -1,0 +1,39 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": "public",
+    "rewrites": [
+      { "source": "/about", "destination": "/pages/about.html" },
+      { "source": "/contact", "destination": "/pages/contact.html" },
+      { "source": "/events", "destination": "/pages/events.html" },
+      { "source": "/inscription", "destination": "/pages/inscription.html" },
+      { "source": "/email", "destination": "/pages/emailAffiche.html" },
+      { "source": "/admin", "destination": "/pages/admin.html" },
+      { "source": "/", "destination": "/index.html" }
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}
