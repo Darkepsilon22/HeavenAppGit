@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Liste des utilisateurs</title>
+    <title>Admin - Liste des invités</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -12,29 +12,142 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            padding: 20px 0;
         }
         .container {
             max-width: 900px;
             width: 100%;
+            padding: 0 15px;
         }
+        
         .table {
-            font-size: 0.9rem;
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .table thead {
+            background-color: #0a1134;
+            color: #ffffff;
         }
         .table th, .table td {
+            padding: 12px 15px;
             text-align: center;
-            padding: 8px;
+            border-bottom: 1px solid #e5e5e5;
         }
-        .table th {
-            background-color: #007bff;
-            color: white;
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+            transition: background-color 0.3s ease;
         }
+        .table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* Design responsive pour une meilleure lisibilité sur mobile */
+        @media (max-width: 768px) {
+            .table thead {
+                display: none;
+            }
+            .table, .table tbody, .table tr, .table td {
+                display: block;
+                width: 100%;
+            }
+            .table tr {
+                margin-bottom: 15px;
+                border: 1px solid #e5e5e5;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            .table td {
+                text-align: right;
+                padding-left: 50%;
+                position: relative;
+                border: none;
+                border-bottom: 1px solid #e5e5e5;
+            }
+            .table td::before {
+                content: attr(data-label);
+                position: absolute;
+                left: 15px;
+                width: 40%;
+                font-weight: bold;
+                text-align: left;
+            }
+            .table tr:last-child td {
+                border-bottom: none;
+            }
+        }
+        
+        /* Autres styles existants */
         .loading {
             display: none;
             text-align: center;
             font-size: 18px;
             color: #007bff;
+            margin: 15px 0;
+        }
+        .pagination {
+            justify-content: center;
+        }
+        .alert {
+            display: none;
+            margin-top: 15px;
+        }
+        .file-input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .btn-danger:hover {
+            background-color: #bb2d3b;
+            border-color: #bb2d3b;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .compact-button {
+            padding: 8px 15px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        .stats-container {
+            background-color: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .import-export-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-primary {
+            background-color: #0A3D62 !important; /* Couleur personnalisée pour le fond */
+            border-color: #0A3D62 !important;
+        }
+        .btn-primary:hover {
+            background-color: #002147 !important;
+            border-color: #002147 !important;
+        }
+      
+        .btn-success {
+            background-color: #00cfa1 !important;
+            border-color: #00cfa1 !important;
+        }
+        .btn-success:hover {
+            background-color: #00a68a !important;
+            border-color: #00a68a !important;
         }
     </style>
 </head>
@@ -42,9 +155,24 @@
 
 <div class="container">
 
-    <h1 class="my-4 text-center">Liste des Utilisateurs</h1>
+    <h1 class="my-4 text-center" style="color: #002147 ;">Liste des invités</h1>
 
-    <table class="table table-bordered">
+    <div class="alert alert-success" id="successAlert" role="alert">
+        Opération réussie!
+    </div>
+    
+    <div class="alert alert-danger" id="errorAlert" role="alert">
+        Une erreur s'est produite.
+    </div>
+
+    <div class="loading" id="loadingMessage">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Chargement en cours...</span>
+        </div>
+        <p class="mt-2">Chargement en cours...</p>
+    </div>
+
+    <table class="table">
         <thead>
             <tr>
                 <th>Email</th>
@@ -55,31 +183,43 @@
             </tr>
         </thead>
         <tbody id="userList">
-        </tbody>
+          </tbody>
     </table>
 
-    <div class="d-flex justify-content-between my-4">
-        <div>
-            <p><strong>Total Invitations:</strong> <span id="totalInvitations">0</span></p>
-            <p><strong>Invitations Restantes:</strong> <span id="remainingInvitations">0</span></p>
-        </div>
-        <div>
-            <button class="btn btn-success" id="exportBtn">Exporter en Excel</button>
+    <div class="stats-container">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <span class="badge bg-primary me-2">Total: <span id="totalInvitations">0</span></span>
+                <span class="badge bg-success">Restantes: <span id="remainingInvitations">0</span></span>
+            </div>
+            
+            <div class="import-export-container">
+                <div class="file-input-wrapper">
+                    <input type="file" id="excelFile" accept=".xlsx" class="form-control compact-button">
+                    <button class="btn btn-primary compact-button" id="importButton">Importer</button>
+                </div>
+                <button class="btn btn-success compact-button" id="exportBtn">Exporter</button>
+            </div>
         </div>
     </div>
 
-    <div class="pagination-container">
-        <ul class="pagination" id="pagination">
-        </ul>
+    <div class="d-flex justify-content-between mt-4">
+        <ul class="pagination" id="pagination"></ul>
+        
+        <div class="action-buttons">
+            <button class="btn btn-secondary compact-button" id="refreshBtn">
+                <i class="bi bi-arrow-clockwise"></i> Actualiser
+            </button>
+            <button class="btn btn-danger compact-button" id="deleteAllBtn">
+                <i class="bi bi-trash"></i> Supprimer
+            </button>
+        </div>
     </div>
-
-    <div class="loading" id="loadingMessage">Chargement en cours...</div>
-
 </div>
 
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js';
-    import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
+    import { getFirestore, collection, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
 
     const firebaseConfig = {
         apiKey: "AIzaSyApJun7s5MfXVn9NQJliHGw2XRn5pl0u3k",
@@ -99,32 +239,70 @@
     let currentPage = 1;
     let users = [];
 
+    // Fonctions d'alerte
+    function showAlert(type, message, duration = 5000) {
+        const alertElement = type === 'success' ? 
+            document.getElementById('successAlert') : 
+            document.getElementById('errorAlert');
+        
+        alertElement.textContent = message;
+        alertElement.style.display = 'block';
+        
+        setTimeout(() => {
+            alertElement.style.display = 'none';
+        }, duration);
+    }
+
+    // Fonction pour gérer le chargement
+    function setLoading(isLoading) {
+        const loadingMessage = document.getElementById('loadingMessage');
+        loadingMessage.style.display = isLoading ? 'block' : 'none';
+    }
+
+    async function fetchRemainingInvitations() {
+        try {
+            const eventDoc = await getDoc(doc(db, 'event', 'invitations'));
+            if (eventDoc.exists()) {
+                return eventDoc.data().remaining || 0;
+            }
+            return 0;
+        } catch (error) {
+            console.error('Erreur lors de la récupération des invitations restantes:', error);
+            return 0;
+        }
+    }
+
     async function fetchUsersAndEvents() {
         try {
-            const loadingMessage = document.getElementById('loadingMessage');
-            loadingMessage.style.display = 'block';
+            setLoading(true);
 
             const usersSnapshot = await getDocs(collection(db, 'users'));
-            users = usersSnapshot.docs.map(doc => doc.data());
+            users = usersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Trier les utilisateurs par nom
+            users.sort((a, b) => a.name.localeCompare(b.name));
 
             let totalInvitations = 0;
-            let totalRemaining = 200; 
             users.forEach(user => {
-                totalInvitations += user.invitations;
-                totalRemaining -= user.invitations;
+                totalInvitations += user.invitations || 0;
             });
 
+            const remainingInvitations = await fetchRemainingInvitations();
+
             document.getElementById('totalInvitations').textContent = totalInvitations;
-            document.getElementById('remainingInvitations').textContent = totalRemaining;
+            document.getElementById('remainingInvitations').textContent = remainingInvitations;
 
             displayPage(currentPage);
-
             updatePagination();
 
         } catch (error) {
             console.error('Erreur lors de la récupération des données:', error);
+            showAlert('error', 'Erreur lors du chargement des données.');
         } finally {
-            document.getElementById('loadingMessage').style.display = 'none';
+            setLoading(false);
         }
     }
 
@@ -136,47 +314,148 @@
         const userList = document.getElementById('userList');
         userList.innerHTML = ''; 
 
+        if (usersToDisplay.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 5;
+            cell.textContent = 'Aucun utilisateur trouvé';
+            cell.style.textAlign = 'center';
+            row.appendChild(cell);
+            userList.appendChild(row);
+            return;
+        }
+
         usersToDisplay.forEach(user => {
             const row = document.createElement('tr');
             row.innerHTML = ` 
-                <td>${user.email}</td>
-                <td>${user.name}</td>
-                <td>${user.firstname}</td>
-                <td>${user.phone}</td>
-                <td>${user.invitations}</td>
+                <td>${user.email || ''}</td>
+                <td>${user.name || ''}</td>
+                <td>${user.firstname || ''}</td>
+                <td>${user.phone || ''}</td>
+                <td>${user.invitations || 0}</td>
             `;
             userList.appendChild(row);
         });
     }
 
-    // Fonction pour mettre à jour la pagination
     function updatePagination() {
         const pagination = document.getElementById('pagination');
         pagination.innerHTML = ''; 
 
         const totalPages = Math.ceil(users.length / itemsPerPage);
+        
+        if (totalPages <= 1) {
+            return;
+        }
 
-        for (let i = 1; i <= totalPages; i++) {
+        // Ajouter un bouton "Précédent"
+        const prevItem = document.createElement('li');
+        prevItem.classList.add('page-item');
+        if (currentPage === 1) prevItem.classList.add('disabled');
+        
+        const prevLink = document.createElement('a');
+        prevLink.classList.add('page-link');
+        prevLink.href = '#';
+        prevLink.innerHTML = '&laquo;';
+        prevLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (currentPage > 1) {
+                currentPage--;
+                displayPage(currentPage);
+                updatePagination();
+            }
+        });
+        
+        prevItem.appendChild(prevLink);
+        pagination.appendChild(prevItem);
+
+        // Afficher les pages
+        // Si beaucoup de pages, on n'affiche que certaines
+        const displayedPages = [];
+        
+        if (totalPages <= 7) {
+            // Peu de pages, on les affiche toutes
+            for (let i = 1; i <= totalPages; i++) {
+                displayedPages.push(i);
+            }
+        } else {
+            // Beaucoup de pages, affichage sélectif
+            displayedPages.push(1); // Toujours la première page
+            
+            if (currentPage > 3) {
+                displayedPages.push('...'); // Points de suspension
+            }
+            
+            // Pages autour de la page courante
+            for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
+                displayedPages.push(i);
+            }
+            
+            if (currentPage < totalPages - 2) {
+                displayedPages.push('...'); // Points de suspension
+            }
+            
+            displayedPages.push(totalPages); // Toujours la dernière page
+        }
+        
+        // Créer les éléments pour chaque page à afficher
+        displayedPages.forEach(page => {
             const pageItem = document.createElement('li');
             pageItem.classList.add('page-item');
-            const pageLink = document.createElement('a');
-            pageLink.classList.add('page-link');
-            pageLink.href = '#';
-            pageLink.textContent = i;
-            pageLink.addEventListener('click', () => {
-                currentPage = i;
-                displayPage(currentPage);
-            });
-            pageItem.appendChild(pageLink);
+            
+            if (page === '...') {
+                // Points de suspension
+                const pageEllipsis = document.createElement('span');
+                pageEllipsis.classList.add('page-link');
+                pageEllipsis.textContent = '...';
+                pageItem.appendChild(pageEllipsis);
+            } else {
+                // Numéro de page
+                if (page === currentPage) pageItem.classList.add('active');
+                
+                const pageLink = document.createElement('a');
+                pageLink.classList.add('page-link');
+                pageLink.href = '#';
+                pageLink.textContent = page;
+                pageLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    currentPage = page;
+                    displayPage(currentPage);
+                    updatePagination();
+                });
+                
+                pageItem.appendChild(pageLink);
+            }
+            
             pagination.appendChild(pageItem);
-        }
+        });
+
+        // Ajouter un bouton "Suivant"
+        const nextItem = document.createElement('li');
+        nextItem.classList.add('page-item');
+        if (currentPage === totalPages) nextItem.classList.add('disabled');
+        
+        const nextLink = document.createElement('a');
+        nextLink.classList.add('page-link');
+        nextLink.href = '#';
+        nextLink.innerHTML = '&raquo;';
+        nextLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (currentPage < totalPages) {
+                currentPage++;
+                displayPage(currentPage);
+                updatePagination();
+            }
+        });
+        
+        nextItem.appendChild(nextLink);
+        pagination.appendChild(nextItem);
     }
 
     document.getElementById('exportBtn').addEventListener('click', async () => {
-        const loadingMessage = document.getElementById('loadingMessage');
-        loadingMessage.style.display = 'block'; 
-
         try {
+            setLoading(true);
+            
             const response = await fetch('https://us-central1-testcloud-7de43.cloudfunctions.net/exportToExcel');
             if (response.ok) {
                 const blob = await response.blob();
@@ -184,15 +463,90 @@
                 link.href = URL.createObjectURL(blob);
                 link.download = 'export_utilisateurs.xlsx';
                 link.click();
+                showAlert('success', 'Export réussi !');
             } else {
-                console.error('Erreur lors de l\'exportation en Excel');
+                const errorText = await response.text();
+                throw new Error(`Échec de l'exportation: ${errorText}`);
             }
         } catch (error) {
-            console.error('Erreur de réseau ou autre :', error);
+            console.error('Erreur lors de l\'exportation:', error);
+            showAlert('error', 'Erreur lors de l\'exportation en Excel.');
         } finally {
-            loadingMessage.style.display = 'none'; 
+            setLoading(false);
         }
     });
+
+    document.getElementById("importButton").addEventListener("click", async function () {
+        const fileInput = document.getElementById("excelFile");
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            showAlert('error', 'Veuillez sélectionner un fichier Excel.');
+            return;
+        }
+        
+        const file = fileInput.files[0];
+        if (!file.name.endsWith('.xlsx')) {
+            showAlert('error', 'Seuls les fichiers Excel (.xlsx) sont acceptés.');
+            return;
+        }
+        
+        try {
+            setLoading(true);
+            
+            const formData = new FormData();
+            formData.append("file", file);
+            
+            const response = await fetch("https://us-central1-testcloud-7de43.cloudfunctions.net/importFromExcel", {
+                method: "POST", 
+                body: formData
+            });
+            
+            const result = await response.text();
+            
+            if (response.ok) {
+                showAlert('success', result);
+                fileInput.value = ""; // Réinitialiser l'input file
+                await fetchUsersAndEvents(); // Rafraîchir les données
+            } else {
+                throw new Error(result);
+            }
+        } catch (error) {
+            console.error("Erreur lors de l'importation:", error);
+            showAlert('error', `Erreur lors de l'importation: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    });
+
+document.getElementById('deleteAllBtn').addEventListener('click', async () => {
+    const confirmation = confirm('Êtes-vous ABSOLUMENT CERTAIN de vouloir supprimer TOUTES les données ? Cette action est irréversible !');
+    
+    if (!confirmation) return;
+
+    try {
+        setLoading(true);
+        
+        const response = await fetch('https://us-central1-testcloud-7de43.cloudfunctions.net/deleteAllData', {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+        
+        if (response.ok) {
+            showAlert('success', result.message);
+            await fetchUsersAndEvents(); 
+        } else {
+            throw new Error(result.message);
+        }
+    } catch (error) {
+        console.error('Erreur lors de la suppression:', error);
+        showAlert('error', error.message);
+    } finally {
+        setLoading(false);
+    }
+});
+
+    document.getElementById('refreshBtn').addEventListener('click', fetchUsersAndEvents);
 
     window.onload = fetchUsersAndEvents;
 </script>

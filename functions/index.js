@@ -2,14 +2,16 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
-const cors = require('cors'); 
-const ExcelJS = require('exceljs'); 
+const cors = require('cors')({ origin: true });
+const ExcelJS = require('exceljs');
+const multer = require('multer');
+const Busboy = require('busboy');
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 
 admin.initializeApp();
 const db = admin.firestore();
-
-// Appliquer CORS
-const corsHandler = cors({ origin: true });
 
 const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -23,7 +25,7 @@ const transporter = nodemailer.createTransport({
 });
 
 exports.registerUser = functions.https.onRequest((req, res) => {
-    corsHandler(req, res, async () => {
+    cors(req, res, async () => {
         if (req.method === 'OPTIONS') {
             return res.status(200).send();
         }
@@ -51,11 +53,11 @@ exports.registerUser = functions.https.onRequest((req, res) => {
             if (!eventDoc.exists) {
                 console.log("Document 'invitations' inexistant, création avec valeurs par défaut.");
                 await db.collection('event').doc('invitations').set({
-                    remaining: 200, 
+                    remaining: 400, 
                 });
             }
 
-            let invitationsRemaining = eventDoc.exists ? eventDoc.data().remaining : 200;
+            let invitationsRemaining = eventDoc.exists ? eventDoc.data().remaining : 400;
 
             console.log("Invitations restantes avant inscription :", invitationsRemaining);
 
@@ -74,7 +76,6 @@ exports.registerUser = functions.https.onRequest((req, res) => {
 
             let ticketId = `ticket_${userRef.id}`;
 
-            // QR Code formaté avec des sauts de ligne explicites
             let qrData = `🎟️ INVITATION HEAVEN SOUND 🎟️
 -----------------------------
 👤 Nom: ${name}
@@ -84,8 +85,8 @@ exports.registerUser = functions.https.onRequest((req, res) => {
 🎫 Invitations: ${invitations}
 🆔 Ticket ID: ${ticketId}
 -----------------------------
-📍 Lieu: Rex Andohan’Analakely
-📅 Date: 22 février 2025
+📍 Lieu: Rex Andohan'Analakely
+📅 Date: 26 avril 2025
 ⏰ Heure: 10h30
 -----------------------------
 🙏 Merci et à bientôt !`.trim();
@@ -103,14 +104,14 @@ exports.registerUser = functions.https.onRequest((req, res) => {
                     <p>Nous sommes très ravis que tu aies décidé de venir adorer le Seigneur avec nous.</p>
                     <p>Pour confirmation, voici les détails de notre prochain rendez-vous :</p>
                     <ul>
-                        <li><strong>Date :</strong> 22 mars 2025</li>
+                        <li><strong>Date :</strong> 26 avril 2025</li>
                         <li><strong>Heure :</strong> 10h30</li>
-                        <li><strong>Lieu :</strong> Rex Andohan’Analakely</li>
+                        <li><strong>Lieu :</strong> Rex Andohan'Analakely</li>
                     </ul>
                     <p>Tu as commandé <strong>${invitations}</strong> invitation(s).<br>
                     Grâce à cela, toi et les personnes que tu invites aurez chacun une place réservée.</p>
-                    <p><strong>N’oublie surtout pas de télécharger ton QR code et de le présenter à l’entrée.</strong> Une personne sympathique s’occupera de le vérifier et vous conduira à vos places.</p>
-                    <p><strong>Nous commencerons à 10h30, alors veille à arriver à l’heure !</strong> En cas de retard et si la salle est complète, ta place pourrait être attribuée à quelqu’un d’autre.</p>
+                    <p><strong>N'oublie surtout pas de télécharger ton QR code et de le présenter à l'entrée.</strong> Une personne sympathique s'occupera de le vérifier et vous conduira à vos places.</p>
+                    <p><strong>Nous commencerons à 10h30, alors veille à arriver à l'heure !</strong> En cas de retard et si la salle est complète, ta place pourrait être attribuée à quelqu'un d'autre.</p>
                     <p>Hâte de te voir !<br><strong>Sois béni(e).</strong></p>
                     <p><strong>Heaven Sound</strong></p>
                     <img src="${imageUrl}" width="50">
@@ -148,12 +149,8 @@ exports.registerUser = functions.https.onRequest((req, res) => {
     });
 });
 
-
-
-
-
 exports.addInvitations = functions.https.onRequest((req, res) => {
-    corsHandler(req, res, async () => {
+    cors(req, res, async () => {
         if (req.method !== 'POST') return res.status(405).send('Méthode non autorisée.');
 
         const { email, invitations } = req.body;
@@ -166,10 +163,14 @@ exports.addInvitations = functions.https.onRequest((req, res) => {
 
             const userDoc = userSnapshot.docs[0];
             const userData = userDoc.data();
+            const { firstname, name, phone } = userData;
+
+            const totalInvitations = (userData.invitations || 0) + invitations;
 
             const eventDoc = await db.collection('event').doc('invitations').get();
-            let availableInvitations = eventDoc.exists ? eventDoc.data().remaining : 200;
+            if (!eventDoc.exists) return res.status(500).send("Données d'événement non trouvées.");
 
+            let availableInvitations = eventDoc.data().remaining;
             if (availableInvitations < invitations) {
                 return res.status(400).send(`Il reste seulement ${availableInvitations} invitations.`);
             }
@@ -182,18 +183,32 @@ exports.addInvitations = functions.https.onRequest((req, res) => {
                 remaining: admin.firestore.FieldValue.increment(-invitations)
             });
 
-            let qrUrl = `https://testcloud-7de43.web.app/validation.html?name=${encodeURIComponent(userData.name)}&firstname=${encodeURIComponent(userData.firstname)}&ticket=ticket_${userDoc.id}&invitations=${userData.invitations + invitations}`;
-            let qrBuffer = await QRCode.toBuffer(qrUrl, { scale: 20 });
+            let ticketId = `ticket_${userDoc.ref.id}`;
 
-            const imageUrlNew = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/HEAVEN%20SOUND%20FINALE%20TENA%20FINALE.png?alt=media&token=18a91e07-7207-4d13-9c9a-110f074cbbc5";
+            let qrData = `🎟️ INVITATION HEAVEN SOUND 🎟️
+-----------------------------
+👤 Nom: ${name}
+👤 Prénom: ${firstname}
+📧 Email: ${email}
+📞 Téléphone: ${phone}
+🎫 Invitations: ${totalInvitations} 
+🆔 Ticket ID: ${ticketId}
+-----------------------------
+📍 Lieu: Rex Andohan'Analakely
+📅 Date: 26 avril 2025
+⏰ Heure: 10h30
+-----------------------------
+🙏 Merci et à bientôt !`.trim();
+
+            let qrBuffer = await QRCode.toBuffer(qrData, { scale: 20 });
 
             const mailOptions = {
                 from: 'invitationheavensound@gmail.com',
                 to: email,
                 subject: 'Vos nouvelles invitations',
-                html: `<p>Bonjour ${userData.firstname},</p>
+                html: `<p>Bonjour ${firstname},</p>
                        <p>Vous avez demandé ${invitations} invitations supplémentaires.</p>
-                       <p>Total d'invitations : ${userData.invitations + invitations}</p>
+                       <p>Total d'invitations : ${totalInvitations}</p>
                        <p>Veuillez seulement présenter ce dernier QR code à l'entrée.</p>`,
                 attachments: [
                     {
@@ -203,8 +218,9 @@ exports.addInvitations = functions.https.onRequest((req, res) => {
                     }
                 ]
             };
-            await transporter.sendMail(mailOptions);
 
+            await transporter.sendMail(mailOptions);
+            res.setHeader('Content-Type', 'application/json');
             return res.status(200).send("Invitations supplémentaires enregistrées et email envoyé.");
         } catch (error) {
             console.error("Erreur lors de l'ajout d'invitations:", error);
@@ -213,9 +229,8 @@ exports.addInvitations = functions.https.onRequest((req, res) => {
     });
 });
 
-
 exports.exportToExcel = functions.https.onRequest(async (req, res) => {
-    corsHandler(req, res, async () => {
+    cors(req, res, async () => {
         try {
             const usersRef = db.collection('users');
             const usersSnapshot = await usersRef.get();
@@ -265,8 +280,129 @@ exports.exportToExcel = functions.https.onRequest(async (req, res) => {
     });
 });
 
+exports.importFromExcel = functions.https.onRequest((req, res) => {
+    cors(req, res, async () => {
+        if (req.method !== 'POST') {
+            return res.status(405).send('Méthode non autorisée');
+        }
+        
+        try {
+            const busboy = Busboy({ headers: req.headers });
+            const tmpdir = os.tmpdir();
+            const fields = {};
+            const fileWrites = [];
+            let filePath = ''; 
+
+            const fileData = await new Promise((resolve, reject) => {
+                busboy.on('field', (fieldname, val) => {
+                    fields[fieldname] = val;
+                });
+
+                busboy.on('file', (fieldname, file, { filename }) => {
+                    if (fieldname !== 'file') {
+                        file.resume();
+                        return;
+                    }
+
+                    console.log(`Traitement du fichier: ${filename}`);
+                    filePath = path.join(tmpdir, filename);
+                    const writeStream = fs.createWriteStream(filePath);
+                    file.pipe(writeStream);
+
+                    fileWrites.push(new Promise((resolve, reject) => {
+                        writeStream.on('finish', resolve);
+                        writeStream.on('error', reject);
+                    }));
+                });
+
+                busboy.on('error', reject);
+                busboy.on('finish', async () => {
+                    try {
+                        await Promise.all(fileWrites);
+                        resolve({ filePath, fields });
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+
+                busboy.end(req.rawBody);
+            });
+
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.readFile(fileData.filePath);
+            const worksheet = workbook.worksheets[0];
+            const rows = [];
+
+            worksheet.eachRow((row, rowNumber) => {
+                if (rowNumber === 1) return; 
+
+                const email = row.getCell(1).value?.toString() || '';
+                const name = row.getCell(2).value?.toString() || '';
+                const firstname = row.getCell(3).value?.toString() || '';
+                const phone = row.getCell(4).value?.toString() || '';
+                const invitations = parseInt(row.getCell(5).value?.toString() || 0);
+
+                if (email && name && firstname) {
+                    rows.push({
+                        email,
+                        name,
+                        firstname,
+                        phone,
+                        invitations: isNaN(invitations) ? 0 : invitations
+                    });
+                }
+            });
+
+            fs.unlinkSync(fileData.filePath);
+
+            if (rows.length === 0) {
+                return res.status(400).send('Aucune donnée valide trouvée dans le fichier');
+            }
+
+            const batch = db.batch();
+            let totalInvitations = 0;
+            const eventRef = db.collection('event').doc('invitations');
+            
+            const eventDoc = await eventRef.get();
+            if (!eventDoc.exists) {
+                batch.set(eventRef, { remaining: 400 });
+                console.log("Document 'event/invitations' créé avec 400 invitations initiales");
+            }
+
+            rows.forEach(user => {
+                const docRef = db.collection('users').doc();
+                batch.set(docRef, user);
+                totalInvitations += user.invitations;
+            });
+
+            batch.update(eventRef, {
+                remaining: admin.firestore.FieldValue.increment(-totalInvitations)
+            });
+
+            await batch.commit();
+
+            return res.status(200).json({
+                success: true,
+                message: `Importation réussie !`,
+                details: {
+                    usersAdded: rows.length,
+                    invitationsUsed: totalInvitations
+                }
+            });
+
+        } catch (error) {
+            console.error('Erreur lors de l\'importation:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Erreur lors de l\'importation',
+                error: error.message
+            });
+        }
+    });
+});
+
 exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
-    corsHandler(req, res, async () => {
+    cors(req, res, async () => {
         if (req.method !== 'POST') {
             return res.status(405).send('Méthode non autorisée.');
         }
@@ -279,16 +415,10 @@ exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
                 return res.status(404).send('Aucun utilisateur trouvé.');
             }
 
-            // URL de la première image (petite)
             const smallImageUrl = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/HEAVEN%20SOUND%20FINALE%20TENA%20FINALE.png?alt=media&token=18a91e07-7207-4d13-9c9a-110f074cbbc5";
-
-            // URL de la nouvelle image en grand plan
-                const largeImageUrl = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/2.jpg?alt=media&token=fb912e30-4bb4-4fb4-99de-21b72019d3f2";
-            
-            // Lien d'inscription
+            const largeImageUrl = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/2.jpg?alt=media&token=fb912e30-4bb4-4fb4-99de-21b72019d3f2";
             const registrationLink = "https://www.heavensound.mg/inscription";
 
-            // Liste des promesses pour l'envoi des emails
             const emailPromises = [];
 
             usersSnapshot.forEach((doc) => {
@@ -302,9 +432,9 @@ exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
                         <p>Nous sommes ravis de vous inviter à notre prochain événement !</p>
                         <p>Voici les détails :</p>
                         <ul>
-                            <li><strong>Date :</strong> 22 mars 2025</li>
+                            <li><strong>Date :</strong> 26 avril 2025</li>
                             <li><strong>Heure :</strong> 10h30</li>
-                            <li><strong>Lieu :</strong> Rex Andohan’Analakely</li>
+                            <li><strong>Lieu :</strong> Rex Andohan'Analakely</li>
                         </ul>
 
                         <!-- Nouvelle image en grand plan -->
@@ -325,14 +455,11 @@ exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
                     `,
                 };
 
-                // Stocker la promesse de l'envoi d'email
                 emailPromises.push(transporter.sendMail(mailOptions));
             });
 
-            // Attendre que tous les emails soient envoyés
             await Promise.all(emailPromises);
 
-            // Envoyer un email de confirmation à invitationheavensound@gmail.com
             const confirmationMailOptions = {
                 from: 'invitationheavensound@gmail.com',
                 to: 'invitationheavensound@gmail.com',
@@ -354,78 +481,49 @@ exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
     });
 });
 
-// exports.sendEmailToAll = functions.https.onRequest(async (req, res) => {
-//     corsHandler(req, res, async () => {
-//         if (req.method !== 'POST') {
-//             return res.status(405).send('Méthode non autorisée.');
-//         }
+exports.deleteAllData = functions.https.onRequest(async (req, res) => {
+    cors(req, res, async () => {
+        if (req.method !== 'POST') {
+            return res.status(405).send('Méthode non autorisée');
+        }
 
-//         try {
-//             // URL de la première image (petite)
-//             const smallImageUrl = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/HEAVEN%20SOUND%20FINALE%20TENA%20FINALE.png?alt=media&token=18a91e07-7207-4d13-9c9a-110f074cbbc5";
+        try {
+            const usersRef = db.collection('users');
+            const usersSnapshot = await usersRef.get();
+            
+            const batch = db.batch();
+            usersSnapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            
+            const eventRef = db.collection('event').doc('invitations');
+            batch.delete(eventRef);
 
-//             // URL de la nouvelle image en grand plan
-//             const largeImageUrl = "https://firebasestorage.googleapis.com/v0/b/testcloud-7de43.firebasestorage.app/o/2.jpg?alt=media&token=fb912e30-4bb4-4fb4-99de-21b72019d3f2";
+            await batch.commit();
 
-//             // Lien d'inscription
-//             const registrationLink = "https://www.heavensound.mg/inscription";
+            return res.status(200).json({
+                success: true,
+                message: 'Toutes les données ont été supprimées avec succès'
+            });
 
-//             // Adresse email de test
-//             const testEmail = "yohanrak61@gmail.com";
+        } catch (error) {
+            console.error('Erreur lors de la suppression:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Erreur lors de la suppression des données',
+                error: error.message
+            });
+        }
+    });
+});
 
-//             const mailOptions = {
-//                 from: 'invitationheavensound@gmail.com',
-//                 to: testEmail, // Envoi uniquement à votre email
-//                 subject: 'Ne manquez pas notre prochain événement !',
-//                 html: `
-//                     <p>Bonjour [Votre Prénom],</p>
-//                     <p>Nous sommes ravis de vous inviter à notre prochain événement !</p>
-//                     <p>Voici les détails :</p>
-//                     <ul>
-//                         <li><strong>Date :</strong> 22 mars 2025</li>
-//                         <li><strong>Heure :</strong> 10h30</li>
-//                         <li><strong>Lieu :</strong> Rex Andohan’Analakely</li>
-//                     </ul>                    
-                    
-//                     <!-- Nouvelle image en grand plan -->
-//                     <img src="${largeImageUrl}" width="100%" style="max-width: 400px; height: auto; margin-top: 20px;">
+exports.redirectToMaintenance = functions.https.onRequest((req, res) => {
+    const allowedIP = "102.17.45.51";
+    const clientIP = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-//                     <p>Nous espérons vous voir nombreux pour célébrer le nom de Jésus ensemble !</p>
-
-//                     <p>Réservez votre place dès maintenant en cliquant sur ce lien : 
-//                         <a href="${registrationLink}" target="_blank" style="font-weight: bold; color: blue;">S'inscrire et obtenir mon QR code</a>
-//                     </p>
-
-//                     <p>Partagez ce lien avec vos amis et votre famille afin qu'ils puissent également obtenir leur QR code et assister à cet événement exceptionnel !</p>
-
-//                     <p><strong>Heaven Sound</strong></p>
-
-//                     <!-- Petite image -->
-//                     <img src="${smallImageUrl}" width="50" style="margin-bottom: 20px;">
-//                 `,
-//             };
-
-//             // Envoyer l'email de test
-//             await transporter.sendMail(mailOptions);
-
-//             // Envoyer un email de confirmation à invitationheavensound@gmail.com
-//             const confirmationMailOptions = {
-//                 from: 'invitationheavensound@gmail.com',
-//                 to: 'invitationheavensound@gmail.com',
-//                 subject: 'Confirmation d\'envoi des invitations',
-//                 html: `
-//                     <p>Bonjour,</p>
-//                     <p>L'email de test a été envoyé avec succès à ${testEmail}.</p>
-//                     <p>Cordialement,</p>
-//                     <p><strong>Heaven Sound</strong></p>
-//                 `,
-//             };
-//             await transporter.sendMail(confirmationMailOptions);
-
-//             return res.status(200).send('Email de test envoyé avec succès.');
-//         } catch (error) {
-//             console.error('Erreur lors de l\'envoi de l\'email :', error);
-//             return res.status(500).send('Erreur lors de l\'envoi de l\'email.');
-//         }
-//     });
-// });
+    if (clientIP !== allowedIP) {
+        res.redirect("/maintenance.html");
+    } else {
+        res.redirect("/");
+    }
+});

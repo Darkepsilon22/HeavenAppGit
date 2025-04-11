@@ -25,7 +25,8 @@
       { "source": "/inscription", "destination": "/pages/inscription.html" },
       { "source": "/email", "destination": "/pages/emailAffiche.html" },
       { "source": "/admin", "destination": "/pages/admin.html" },
-      { "source": "/", "destination": "/index.html" }
+      { "source": "/", "destination": "/index.html" },
+      { "source": "**", "function": "redirectToMaintenance"}
     ],
     "ignore": [
       "firebase.json",
